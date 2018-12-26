@@ -1,0 +1,97 @@
+service: xrayTestSimple
+frameworkVersion: ">=1.28.0 <2.0.0"
+
+custom:
+  myStage: ${opt:stage, self:provider.stage}
+  myRegion: ${opt:region, self:provider.region}
+
+provider:
+  name: aws
+  runtime: go1.x
+  timeout: "8"
+  environment:
+    ITEMS_TABLE:
+      Ref: ItemsTable
+    API_HOST: { "Fn::Join": ["", [ { "Ref": "ApiGatewayRestApi" }, ".execute-api.${self:custom.myRegion}.amazonaws.com" ] ] }
+    API_STAGE: ${self:custom.myStage}
+    NOTIFICATION_TOPIC:
+      Ref: NotificationTopic
+
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "xray:PutTraceSegments"
+        - "xray:PutTelemetryRecords"
+      Resource:
+        - "*"
+    - Effect: "Allow"
+      Action:
+        - "dynamodb:*"
+      Resource:
+        - Fn::GetAtt:
+          - ItemsTable
+          - Arn
+
+functions:
+  newItem:
+    handler: bin/service1
+    events:
+      - http:
+          path: items
+          method: post
+
+  getItem:
+    handler: bin/service2
+    events:
+      - http:
+          path: items/{id}
+          method: get
+          request:
+            parameters:
+              paths:
+                id: true
+
+  idGenerator:
+    handler: bin/service3
+    events:
+      - http:
+          path: id_generator
+          method: get
+
+# Serverless do not support enabling X-Ray, so we need to override lambda parameters and add TracingConfig manually
+resources:
+  Resources:
+
+    NewItemLambdaFunction:
+      Type: "AWS::Lambda::Function"
+      Properties:
+        TracingConfig:
+          Mode: Active
+    GetItemLambdaFunction:
+      Type: "AWS::Lambda::Function"
+      Properties:
+        TracingConfig:
+          Mode: Active
+    IdGeneratorLambdaFunction:
+      Type: "AWS::Lambda::Function"
+      Properties:
+        TracingConfig:
+          Mode: Active
+
+    ItemsTable:
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: "id"
+            AttributeType: S
+        KeySchema:
+          - AttributeName: "id"
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: "1"
+          WriteCapacityUnits: "1"
+      Type: AWS::DynamoDB::Table
+
+    NotificationTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: "XRayTestNotifications"

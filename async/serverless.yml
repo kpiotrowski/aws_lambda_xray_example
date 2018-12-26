@@ -1,0 +1,44 @@
+service: xrayTestAsync
+frameworkVersion: ">=1.28.0 <2.0.0"
+provider:
+  name: aws
+  runtime: go1.x
+
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "xray:PutTraceSegments"
+        - "xray:PutTelemetryRecords"
+      Resource:
+        - "*"
+    - Effect: "Allow"
+      Action:
+        - "sns:*"
+      Resource:
+        - "*"
+
+functions:
+  func1:
+    handler: bin/func1
+    environment:
+      NotifyTopicArn:
+        Ref: SNSTopicNotifier
+
+  func2:
+    handler: bin/func2
+    events:
+      - sns: notifier
+
+# Serverless do not support enabling X-Ray, so we need to override lambda parameters and add TracingConfig manually
+resources:
+  Resources:
+    Func1LambdaFunction:
+      Type: "AWS::Lambda::Function"
+      Properties:
+        TracingConfig:
+          Mode: Active
+    Func2LambdaFunction:
+      Type: "AWS::Lambda::Function"
+      Properties:
+        TracingConfig:
+          Mode: Active
